@@ -1,7 +1,10 @@
-import cv2
 import yaml
+
 import sys
+import argparse
 from loguru import logger
+
+import cv2
 import numpy as np
 import mediapipe as mp
 
@@ -187,15 +190,21 @@ class Camera():
         cv2.destroyAllWindows()
         logger.info("Process terminated.")
 
+def arg_parser() -> None:
+    parser = argparse.ArgumentParser()
+    parser.add_argument("yaml_file")
+    parser.add_argument("--video", required=True, type=int)
+    args = parser.parse_args()
+    return args
 
-def main(yaml_file):
+def main(yaml_file, cam_idx):
     config = Config(yaml_file)
     detector = Detector()
-    CAM = Camera(0, config, detector)
+    CAM = Camera(cam_idx, config, detector)
     CAM.capture()
 
 if __name__ == "__main__":
     
-    yaml_file = "config/makeup.yaml"
-    
-    main(yaml_file)
+    args = arg_parser()
+
+    main(args.yaml_file, args.video)
