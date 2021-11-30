@@ -1,0 +1,7 @@
+numpy
+opencv-python
+mediapipe
+pyvirtualcam
+pyyaml
+toml
+loguru

@@ -1,33 +1,24 @@
-import toml
-import pprint
-
 import cv2
 import yaml
+import sys
+from loguru import logger
 import numpy as np
 import mediapipe as mp
-import matplotlib.pyplot as plt
-
-
-
 
 class Config():
-    def __init__(self, yaml_file, toml_file) -> None:
-        self.yaml_file = yaml_file
-        self.toml_file = toml_file
-        self._load_yaml()
-        self._load_toml()
-
-    def _load_yaml(self) -> None:
-        with open(self.yaml_file, "r") as f:
+    def __init__(self, yaml_file) -> None:
+        logger.info(f"Reading config file: {yaml_file}")
+        with open(yaml_file, "r") as f:
             self.yaml_cfg = yaml.safe_load(f)
 
-    def _load_toml(self) -> None:
-        with open(self.toml_file, "r") as f:
-            self.toml_cfg = toml.load(f)         
-
-
 class Detector():
-    def __init__(self, thickness, circle_radius, color, min_detection_confidence, min_tracking_confidence) -> None:
+    def __init__(self, 
+                thickness=1, 
+                circle_radius=1, 
+                color=(255,0,255), 
+                min_detection_confidence=0.5, 
+                min_tracking_confidence=0.5) -> None:
+        logger.info("Mediapipe detector initiated.")
         self.drawing = mp.solutions.drawing_utils
         self.drawing_spec = self.drawing.DrawingSpec(
             thickness=thickness, 
@@ -49,7 +40,7 @@ class Detector():
     def __call__(self, image):
         self.img = image
         self.results = self.face_detector.process(image)
-        return self.results
+        # return self.results
 
     def _parts_init(self) -> None:
         self.lips = list(self.face_mesh.FACEMESH_LIPS)
@@ -73,7 +64,6 @@ class Detector():
         if self.results.multi_face_landmarks:
             for face_landmarks in self.results.multi_face_landmarks:
 
-
                 mask_lip = []
                 mask_face = []
                 mask_l_eyes = []
@@ -87,7 +77,6 @@ class Detector():
                         x = int(pt1.x * self.img.shape[1])
                         y = int(pt1.y * self.img.shape[0])
                         mask_lip.append((x, y))
-
                         
                     elif i in self.l_eyes:
                         pt1 = face_landmarks.landmark[i]
@@ -129,7 +118,7 @@ class Detector():
 
             full_mask = mask.copy()
 
-            for idx, (part, v) in enumerate(face_dict.items()):
+            for part, v in face_dict.items():
                 base = mask.copy()
                 convexhull = cv2.convexHull(v)
                 if "eyes" in part:
@@ -148,93 +137,65 @@ class Detector():
                     weight = cfg["lip"]["weight"]
                 else:
                     color = (0, 0, 0)
-                
-                
+                                
                 base = cv2.fillConvexPoly(base, convexhull, (color[2], color[1], color[0]))
-                base = cv2.GaussianBlur(base, (7, 7), 20)
                 
                 full_mask = cv2.addWeighted(full_mask, 1, base, weight, 1)
+            full_mask = cv2.GaussianBlur(full_mask, (7, 7), 20)
             tmp = cv2.addWeighted(self.img, 1, full_mask, 1, 1)
+            
             return tmp, full_mask
+        logger.warning("Face not detected.")
         return self.img, mask
             
 
 class Camera():
-    def __init__(self, cfg, yaml, toml) -> None:
-        self.start(**cfg)
-        self.config = Config(yaml, toml)
-        
+    def __init__(self, index, config, detector) -> None:
+        self.start(index)
+        self.config = config
+        self.detector = detector
 
-    def start(self, index, fps, frame_width, frame_height) -> None:
+    def start(self, index) -> None:
         self.cap = cv2.VideoCapture(index)
-        self.cap.set(cv2.CAP_PROP_FPS, fps)
-        self.cap.set(cv2.CAP_PROP_FRAME_WIDTH, frame_width)
-        self.cap.set(cv2.CAP_PROP_FRAME_HEIGHT, frame_height)
-
-        self.mask = np.zeros((frame_height, frame_width, 3), dtype=np.uint8)
+        success, frame = self.cap.read()
+        if not success:
+            logger.error(f"Camera not successful: video input: {index}")
+            sys.exit()
+        self.mask = np.zeros((frame.shape[0], frame.shape[1], 3), dtype=np.uint8)
         
-
-    def load_detector(self, cfg) -> None:
-        self.detector = Detector(**cfg)
-
-    # def _load_config(self):
-    #     config = Config()
-
-
     def capture(self) -> None:
-        
+        logger.info("Catpuring images from video input...")
         while True:
-            success, frame = self.cap.read()
             
-            if not success:
-                print("SHIT HAPPENED!")
-                break
-
+            _, frame = self.cap.read()
+            
             frame.flags.writeable = False
-            
             # frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
-            results = self.detector(frame)
-            
+            self.detector(frame)
             
             frame.flags.writeable = True
-        
             frame, mask = self.detector.post_processing(self.mask, self.config.yaml_cfg)
             
-            
-            
+            frame = cv2.flip(frame, 1)
             
             cv2.imshow("demo", frame)
-            cv2.imshow("mask", mask)
-            
-            
             
             if cv2.waitKey(1) & 0xFF == ord('q'):
                 break
+        
         self.cap.release()
         cv2.destroyAllWindows()
+        logger.info("Process terminated.")
 
 
-def main():
-    pass
+def main(yaml_file):
+    config = Config(yaml_file)
+    detector = Detector()
+    CAM = Camera(0, config, detector)
+    CAM.capture()
 
 if __name__ == "__main__":
-
-
-
-    img_path = "input/image.jpg"
-
-    src = cv2.imread(img_path)
-    # src = cv2.cvtColor(src, cv2.COLOR_BGR2RGB)
-    img = src.copy()
-
-
-    toml_file = "config/realtime.toml"
+    
     yaml_file = "config/makeup.yaml"
-
-    config = Config(yaml_file, toml_file)
-    camera_cfg = config.toml_cfg["camera"]
-    mediapipe_cfg = config.toml_cfg["mediapipe"]
-
-    CAM = Camera(camera_cfg, yaml_file, toml_file)
-    CAM.load_detector(mediapipe_cfg)    
-    CAM.capture()
+    
+    main(yaml_file)
