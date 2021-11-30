@@ -151,7 +151,6 @@ class Detector():
         logger.warning("Face not detected.")
         return self.img, mask
             
-
 class Camera():
     def __init__(self, index, config, detector) -> None:
         self.start(index)
@@ -167,7 +166,7 @@ class Camera():
         self.mask = np.zeros((frame.shape[0], frame.shape[1], 3), dtype=np.uint8)
         
     def capture(self) -> None:
-        logger.info("Catpuring images from video input...")
+        logger.info("Catpuring images from video input... (press 'q' to exit.)")
         while True:
             
             _, frame = self.cap.read()
